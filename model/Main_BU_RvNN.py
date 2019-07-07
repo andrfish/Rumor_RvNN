@@ -211,7 +211,7 @@ for epoch in range(Nepoch):
         #print loss, pred_y
         losses.append(loss)
         num_examples_seen += 1
-    print("epoch=" + epoch + " : loss=" + np.mean(losses))
+    print("epoch=" + str(epoch) + " : loss=" + str(np.mean(losses)))
     #floss.write(str(time)+": epoch="+str(epoch)+" loss="+str(loss) +'\n')
     sys.stdout.flush()
     
@@ -219,7 +219,7 @@ for epoch in range(Nepoch):
     if epoch % 5 == 0:
        losses_5.append((num_examples_seen, np.mean(losses))) 
        time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-       print(time + ": Loss after num_examples_seen=" + num_examples_seen + " epoch=" + epoch + ": " + np.mean(losses))
+       print(time + ": Loss after num_examples_seen=" + str(num_examples_seen) + " epoch=" + str(epoch) + ": " + str(np.mean(losses)))
        #floss.write(str(time)+": epoch="+str(epoch)+" loss="+str(loss) +'\n') 
        #floss.flush()        
        sys.stdout.flush()
