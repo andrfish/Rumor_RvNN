@@ -1,3 +1,7 @@
+# Fork Description
+
+This repository is a fork of the source code repository as described below. In this fork, we aim to make the original code compatible with Python 3.7. Then, we plan to improve the results of the model as well as add support for GPU processing.
+
 # Paper of the source codes released:
 
 Jing Ma, Wei Gao, Kam-Fai Wong. Rumor Detection on Twitter with Tree-structured Recursive Neural Networks. In Proceedings of the 56th Annual Meeting of the Association for Computational Linguistics, ACL 2018.
@@ -28,9 +32,9 @@ The datafile is in a tab-sepreted column format, where each row corresponds to a
 # Dependencies:
 Please install the following python libraries:
 
-numpy version 1.11.2
+numpy version 1.13.3
 
-theano version 0.8.2
+theano version 1.0.4+12.g93e8180bf (dev branch for GPU compatibility)
 
 # Reproduce the experimental results
 Run script "model/Main_BU_RvNN.py" for bottom-up recursive model or "model/Main_TD_RvNN.py" for up-down recursive model.
