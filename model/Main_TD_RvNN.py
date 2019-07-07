@@ -276,14 +276,14 @@ for epoch in range(Nepoch):
            #print j
            prediction.append(model.predict_up(word_test[j], index_test[j], parent_num_test[j], tree_test[j]) )   
        res = evaluation_4class(prediction, y_test) 
-       print('results:' + " " + res)
+       print('results:' + " " + str(res))
        #floss.write(str(res)+'\n')
        #floss.flush() 
        sys.stdout.flush()
        ## Adjust the learning rate if loss increases
        if len(losses_5) > 1 and losses_5[-1][1] > losses_5[-2][1]:
           lr = lr * 0.5   
-          print("Setting learning rate to " + lr)
+          print("Setting learning rate to " + str(lr))
           #floss.write("Setting learning rate to:"+str(lr)+'\n')
           #floss.flush() 
           sys.stdout.flush()
