@@ -7,9 +7,9 @@
 @time: Tue Nov 10 16:29:42 2015
 """
 
+from importlib import reload
 import sys
 reload(sys)
-sys.setdefaultencoding('utf-8')
 
 import random
 import os
@@ -25,7 +25,7 @@ def evaluation(prediction, y): ## no. of time series
     FN = 0
     e = 0.000001
     threshhold = 0.5
-    fout = open(outevalPath, 'w')
+    fout = open("resource/evaluation.txt", 'w')
     for i in range(len(y)):
         fout.write(str(y[i][0])+"\t"+str(prediction[i][0])+"\n")
         if y[i][0] == 1 and prediction[i][0] >= threshhold:

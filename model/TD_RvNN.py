@@ -3,8 +3,8 @@ __doc__ = """Tree GRU aka Recursive Neural Networks."""
 import numpy as np
 import theano
 from theano import tensor as T
-#from collections import OrderedDict
-from theano.compat.python2x import OrderedDict
+from collections import OrderedDict
+#from theano.compat.python2x import OrderedDict
 from theano.tensor.signal.pool import pool_2d
 
 
@@ -153,7 +153,7 @@ class RvNN(object):
         self.tree = T.imatrix(name='tree')  # shape [None, self.degree]
         self.y = T.ivector(name='y')  # output shape [self.output_dim]
         self.num_parent = T.iscalar(name='num_parent')
-        self.num_nodes = self.x_word.shape[0]  # total number of nodes (leaves + internal) in tree
+        self.num_nodes = T.shape(self.x_word)  # total number of nodes (leaves + internal) in tree
         self.num_child = self.num_nodes - self.num_parent-1
         #emb_x = self.embeddings[self.x]
         #emb_x = emb_x * T.neq(self.x, -1).dimshuffle(0, 'x')  # zero-out non-existent embeddings
