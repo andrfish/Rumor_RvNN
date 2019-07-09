@@ -6,8 +6,6 @@ from theano import tensor as T
 from collections import OrderedDict
 #from theano.compat.python2x import OrderedDict
 
-
-theano.config.device = 'gpu'
 theano.config.floatX = 'float64'
 
 
