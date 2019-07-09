@@ -7,9 +7,6 @@ from collections import OrderedDict
 #from theano.compat.python2x import OrderedDict
 from theano.tensor.signal.pool import pool_2d
 
-theano.config.floatX = 'float32'
-
-
 class Node_tweet(object):
     def __init__(self, idx=None):
         self.children = []

@@ -6,9 +6,6 @@ from theano import tensor as T
 from collections import OrderedDict
 #from theano.compat.python2x import OrderedDict
 
-theano.config.floatX = 'float64'
-
-
 class Node_tweet(object):
     def __init__(self, idx=None):
         self.children = []
