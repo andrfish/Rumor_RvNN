@@ -133,8 +133,8 @@ class algorithm(object):
 
     # Using code from original codebase's "TD_RvNN.py" file
     def create_output_fn(self):
-        self.W_out = self.init_matrix([self.Nclass, self.hidden_dim])
-        self.b_out = self.init_vector([self.Nclass])
+        self.W_out = tf.Variable(self.init_matrix([self.Nclass, self.hidden_dim]))
+        self.b_out = tf.Variable(self.init_vector([self.Nclass]))
         self.params.extend([self.W_out, self.b_out])
 
         def fn(final_state):
@@ -144,16 +144,16 @@ class algorithm(object):
 
     # Using code from original codebase's "TD_RvNN.py" file
     def create_recursive_unit(self):
-        self.E = self.init_matrix([self.hidden_dim, self.word_dim])
-        self.W_z = self.init_matrix([self.hidden_dim, self.hidden_dim])
-        self.U_z = self.init_matrix([self.hidden_dim, self.hidden_dim])
-        self.b_z = self.init_vector([self.hidden_dim])
-        self.W_r = self.init_matrix([self.hidden_dim, self.hidden_dim])
-        self.U_r = self.init_matrix([self.hidden_dim, self.hidden_dim])
-        self.b_r = self.init_vector([self.hidden_dim])
-        self.W_h = self.init_matrix([self.hidden_dim, self.hidden_dim])
-        self.U_h = self.init_matrix([self.hidden_dim, self.hidden_dim])
-        self.b_h = self.init_vector([self.hidden_dim])
+        self.E = tf.Variable(self.init_matrix([self.hidden_dim, self.word_dim]))
+        self.W_z = tf.Variable(self.init_matrix([self.hidden_dim, self.hidden_dim]))
+        self.U_z = tf.Variable(self.init_matrix([self.hidden_dim, self.hidden_dim]))
+        self.b_z = tf.Variable(self.init_vector([self.hidden_dim]))
+        self.W_r = tf.Variable(self.init_matrix([self.hidden_dim, self.hidden_dim]))
+        self.U_r = tf.Variable(self.init_matrix([self.hidden_dim, self.hidden_dim]))
+        self.b_r = tf.Variable(self.init_vector([self.hidden_dim]))
+        self.W_h = tf.Variable(self.init_matrix([self.hidden_dim, self.hidden_dim]))
+        self.U_h = tf.Variable(self.init_matrix([self.hidden_dim, self.hidden_dim]))
+        self.b_h = tf.Variable(self.init_vector([self.hidden_dim]))
         self.params.extend([self.E, self.W_z, self.U_z, self.b_z, self.W_r, self.U_r, self.b_r, self.W_h, self.U_h, self.b_h])
         def unit(word, index, parent_h):
             child_xe = self.E[:,index].dot(word)
@@ -167,12 +167,12 @@ class algorithm(object):
     def compute_tree(self, x_word, x_index, num_parent, tree):
         self.recursive_unit = self.create_recursive_unit()
 
-        def ini_unit(x):
-            return self.init_vector([self.hidden_dim])
+        def ini_unit(dummy, x):
+            return tf.Variable(self.init_vector([self.hidden_dim]))
 
         init_node_h, _ = tf.scan(
             fn=ini_unit,
-            elems=[ x_word ])
+            elems=x_word )
 
         # use recurrence to compute internal node hidden states
         def _recurrence(x_word, x_index, node_info, node_h, last_h):
@@ -184,7 +184,7 @@ class algorithm(object):
                                     node_h[node_info[1]+1:] ])
             return node_h, child_h
 
-        dummy = tself.init_vector([self.hidden_dim])
+        dummy = tf.Variable(self.init_vector([self.hidden_dim]))
         (_, child_hs), _ = tf.scan(
             fn=_recurrence,
             initializer=[init_node_h, dummy],
@@ -195,7 +195,7 @@ class algorithm(object):
     def compute_tree_test(self, x_word, x_index, tree):
         self.recursive_unit = self.create_recursive_unit()
         def ini_unit(x):
-            return self.init_vector([self.hidden_dim])
+            return tf.Variable(self.init_vector([self.hidden_dim]))
         init_node_h, _ = tf.scan(
             fn=ini_unit,
             elems=[ x_word ])
@@ -209,7 +209,7 @@ class algorithm(object):
                                     node_h[node_info[1]+1:] ])
             return node_h, child_h
 
-        dummy = self.init_vector([self.hidden_dim])
+        dummy = tf.Variable(self.init_vector([self.hidden_dim]))
         (_, child_hs), _ = tf.scan(
             fn=_recurrence,
             initializer=[init_node_h, dummy],
