@@ -8,6 +8,7 @@ Please ensure that you have the following installed in addition to the other dep
 - cuDNN v7.6.1 (June 24, 2019), for CUDA 9.0
 - libgpuarray 0.7.1 (conda install -c mila-udem pygpu)
 - mingw (conda install m2w64-toolchain)
+- libpython (conda install libpython)
 
 Then, copy the .theanroc config file in the repository to your home folder. Make sure to update the paths in it appropriately.
 
