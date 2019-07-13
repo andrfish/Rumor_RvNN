@@ -81,43 +81,46 @@ class algorithm(object):
                  irregular_tree=True):   
         assert word_dim > 1 and hidden_dim > 1
 
-        # Define algorithm variables
         self.word_dim = word_dim
         self.hidden_dim = hidden_dim
         self.Nclass = Nclass
         self.degree = degree
         self.momentum = momentum
         self.irregular_tree = irregular_tree
-        self.learning_rate = T.scalar('learning_rate')
 
         self.params = []
 
-        # Define Theano variables
-        self.word_freq = T.matrix(name='x_word')
-        self.word_idx = T.imatrix(name='x_index')
+        self.word_freq = T.matrix(name='word_freq')
+        self.word_idx = T.imatrix(name='word_idx')
         self.tree = T.imatrix(name='tree')
         self.y = T.ivector(name='y')
         self.num_parent = T.iscalar(name='num_parent')
         self.num_nodes = T.shape(self.word_freq)
-
         self.num_child = self.num_nodes - self.num_parent-1
+
         self.tree_states = self.compute_tree(self.word_freq, self.word_idx, self.num_parent, self.tree)
+
         self.final_state = self.tree_states.max(axis=0)
         self.output_fn = self.create_output_fn()
         self.pred_y = self.output_fn(self.final_state)
         self.loss = self.loss_fn(self.y, self.pred_y)
-        self.tree_states_test = self.compute_tree_test(self.word_freq, self.word_idx, self.tree)
-        updates = self.gradient_descent(self.loss)
-        train_inputs = [self.word_freq, self.word_idx, self.num_parent, self.tree, self.y, self.learning_rate]
 
-        # Define Theano functions
+        self.learning_rate = T.scalar('learning_rate')
+
+        train_inputs = [self.word_freq, self.word_idx, self.num_parent, self.tree, self.y, self.learning_rate]
+        updates = self.gradient_descent(self.loss)
+
         self._train = theano.function(train_inputs,
                                       [self.loss, self.pred_y],
                                       updates=updates)
+
         self._evaluate = theano.function([self.word_freq, self.word_idx, self.num_parent, self.tree], self.final_state)
         self._evaluate2 = theano.function([self.word_freq, self.word_idx, self.num_parent, self.tree], self.tree_states)
-        self._evaluate3 = theano.function([self.word_freq, self.word_idx, self.tree], self.tree_states_test)
+
         self._predict = theano.function([self.word_freq, self.word_idx, self.num_parent, self.tree], self.pred_y)
+        
+        self.tree_states_test = self.compute_tree_test(self.word_freq, self.word_idx, self.tree)
+        self._evaluate3 = theano.function([self.word_freq, self.word_idx, self.tree], self.tree_states_test)
     
     # This method steps through an epoch
     def train_step_up(self, x_word, x_index, num_parent, tree, y, lr):
