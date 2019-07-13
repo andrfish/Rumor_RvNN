@@ -7,12 +7,23 @@
 
 #!/usr/bin/env python
 import numpy as np
-import tensorflow as tf
+import theano
+from theano import tensor as T
+from collections import OrderedDict
+from theano.tensor.signal.pool import pool_2d
+
+class Node(object):
+    def __init__(self, idx=None):
+        self.children = []
+        self.tree = idx
+        self.word = []
+        self.index = []
+        self.parent = None
 
 def gen_nn_inputs(root_node, ini_word):
     tree = [[0, root_node.tree]] 
 
-    X_word, X_index = [root_node.word], [root_node.length]
+    X_word, X_index = [root_node.word], [root_node.index]
 
     internal_tree, internal_word, internal_index  = _get_tree_path(root_node)
 
@@ -20,10 +31,10 @@ def gen_nn_inputs(root_node, ini_word):
     X_word.extend(internal_word)
     X_index.extend(internal_index)
     X_word.append(ini_word)
- 
+  
     return (np.array(X_word, dtype='float32'),
             np.array(X_index, dtype='int32'),
-            np.array(tree, dtype='int32'))     
+            np.array(tree, dtype='int32'))
 
 def _get_tree_path(root_node):
     if not root_node.children:
@@ -31,6 +42,7 @@ def _get_tree_path(root_node):
 
     layers = []
     layer = [root_node]
+
     while layer:
         layers.append(layer[:])
         next_layer = []
@@ -45,120 +57,103 @@ def _get_tree_path(root_node):
         for node in layer:
             if not node.children:
                continue 
-
             for child in node.children:
                 tree.append([node.tree, child.tree])
                 word.append(child.word if child.word is not None else -1)
-                index.append(child.length if child.length is not None else -1)
+                index.append(child.index if child.index is not None else -1)
 
     return tree, word, index
 
-# Define a node object for the tweet tree
-class Node(object):
-    def __init__(self, tree=None):
-        self.children = list()
-        self.parent = None
-
-        self.word = list()
-        self.length = -1    #index
-
-        self.tree = tree    #idx
-
-# Define a tree object for the algorithm
 class algorithm(object):
-    _sess = tf.Session()
-
-    def __init__(self, word_dim):
+    def __init__(self, word_dim, hidden_dim=5, Nclass=4,
+                degree=2, momentum=0.9,
+                 trainable_embeddings=True,
+                 labels_on_nonroot_nodes=False,
+                 irregular_tree=True):   
+                               
+        assert word_dim > 1 and hidden_dim > 1
         self.word_dim = word_dim
+        self.hidden_dim = hidden_dim
+        self.Nclass = Nclass
+        self.degree = degree
 
-        # Using defaults from original codebase's "TD_RvNN.py" file
-        self.hidden_dim = 5
-        self.Nclass = 4
-        self.degree = 2
-        self.momentum = 0.9
-        self.irregular_tree = True
+        self.momentum = momentum
+        self.irregular_tree = irregular_tree
+
         self.params = []
 
-        # Initialize algorithm variables in Tensorflow
-        self.word_freq = tf.Variable([[]], tf.int32)    #x_word
-        self.word_index = tf.Variable([[]], tf.int32)   #x_index
-        self.tree = tf.Variable([[]], tf.float64)
-        self.out_shape = tf.Variable([], tf.int32)      #y
+        self.x_word = T.matrix(name='x_word')  # word frequent
+        self.x_index = T.imatrix(name='x_index')  # word indices
+        self.tree = T.imatrix(name='tree')  # shape [None, self.degree]
+        self.y = T.ivector(name='y')  # output shape [self.output_dim]
+        self.num_parent = T.iscalar(name='num_parent')
+        self.num_nodes = T.shape(self.x_word)  # total number of nodes (leaves + internal) in tree
+        self.num_child = self.num_nodes - self.num_parent-1
 
-        self.num_parent = tf.Variable(-1, tf.int32)
-        self.num_nodes = tf.shape(self.word_freq)
-        self.num_child = self.num_nodes - self.num_parent - 1
+        self.tree_states = self.compute_tree(self.x_word, self.x_index, self.num_parent, self.tree)
 
-        # Initialize Tensorflow functions
-        self.tree_states = self.compute_tree(self.word_freq, self.word_index, self.num_parent, self.tree)
-        self.final_state = tf.reduce_max(self.tree_states, axis=0)
-        self.output = self.create_output_fn()
+        self.final_state = self.tree_states.max(axis=0)
+        self.output_fn = self.create_output_fn()
         self.pred_y = self.output_fn(self.final_state)
         self.loss = self.loss_fn(self.y, self.pred_y)
 
-        self.learning_rate = tf.Variable(-1, tf.float64)
+        self.learning_rate = T.scalar('learning_rate')
 
-        # Initialize Tensorflow functions from Theano
-        self.tree_states_test = self.compute_tree_test(self.word_freq, self.x_index, self.tree)
-        train_inputs = tf.Variable([self.word_freq, self.word_index, self.num_parent, self.tree, self.out_shape, self.learning_rate], tf.Tensor)
+        train_inputs = [self.x_word, self.x_index, self.num_parent, self.tree, self.y, self.learning_rate]
         updates = self.gradient_descent(self.loss)
 
-        self._train = TensorFlowTheanoFunction(train_inputs, [self.loss, self.pred_y], updates=updates)
+        self._train = theano.function(train_inputs,
+                                      [self.loss, self.pred_y],
+                                      updates=updates)
 
-        self._evaluate = TensorFlowTheanoFunction([self.word_freq, self.word_index, self.num_parent, self.tree], self.final_state)
-        self._evaluate2 = TensorFlowTheanoFunction([self.word_freq, self.word_index, self.num_parent, self.tree], self.tree_states)
-        self._evaluate3 = TensorFlowTheanoFunction([self.word_freq, self.word_index, self.num_parent, self.tree], self.tree_states_test)
+        self._evaluate = theano.function([self.x_word, self.x_index, self.num_parent, self.tree], self.final_state)
+        self._evaluate2 = theano.function([self.x_word, self.x_index, self.num_parent, self.tree], self.tree_states)
 
-        self._predict = TensorFlowTheanoFunction([self.word_freq, self.word_index, self.num_parent, self.tree], self.pred_y)
-
-    # Using code from original codebase's "TD_RvNN.py" file
-    def train_set_up(self, word_freq, word_index, num_parent, tree, output_shape, learning_rate):
-        return self._train(word_freq, word_index, num_parent, tree, output_shape, learning_rate)
+        self._predict = theano.function([self.x_word, self.x_index, self.num_parent, self.tree], self.pred_y)
+        
+        self.tree_states_test = self.compute_tree_test(self.x_word, self.x_index, self.tree)
+        self._evaluate3 = theano.function([self.x_word, self.x_index, self.tree], self.tree_states_test)
     
-    # Using code from original codebase's "TD_RvNN.py" file
-    def evaluate(self, word_freq, word_index, num_parent, tree):
-        return self._evaluate(word_freq, word_index, num_parent, tree)
+    def train_step_up(self, x_word, x_index, num_parent, tree, y, lr):
+        return self._train(x_word, x_index, num_parent, tree, y, lr)
+        
+    def evaluate(self,  x_word, x_index, num_parent, tree):
+        return self._evaluate(x_word, x_index, num_parent, tree)
 
-    # Using code from original codebase's "TD_RvNN.py" file
-    def predict_up(self, word_freq, word_index, num_parent, tree):
-        return self._predict(word_freq, word_index, num_parent, tree)
+    def predict_up(self, x_word, x_index, num_parent, tree):
+        return self._predict(x_word, x_index, num_parent, tree)
 
-    # Using code from original codebase's "TD_RvNN.py" file
     def init_matrix(self, shape):
-        return np.random.normal(scale=0.1, size=shape).astype(np.float)
+        return np.random.normal(scale=0.1, size=shape).astype(theano.config.floatX)
 
-    # Using code from original codebase's "TD_RvNN.py" file
     def init_vector(self, shape):
-        return np.zeros(shape, dtype=np.float)
+        return np.zeros(shape, dtype=theano.config.floatX)
 
-    # Using code from original codebase's "TD_RvNN.py" file
     def create_output_fn(self):
-        self.W_out = tf.Variable(self.init_matrix([self.Nclass, self.hidden_dim]))
-        self.b_out = tf.Variable(self.init_vector([self.Nclass]))
+        self.W_out = theano.shared(self.init_matrix([self.Nclass, self.hidden_dim]))
+        self.b_out = theano.shared(self.init_vector([self.Nclass]))
         self.params.extend([self.W_out, self.b_out])
 
         def fn(final_state):
-            return tf.nn.softmax(self.W_out.dot(final_state) + self.b_out)
-
+            return T.nnet.softmax( self.W_out.dot(final_state)+ self.b_out )
         return fn
 
-    # Using code from original codebase's "TD_RvNN.py" file
     def create_recursive_unit(self):
-        self.E = tf.Variable(self.init_matrix([self.hidden_dim, self.word_dim]))
-        self.W_z = tf.Variable(self.init_matrix([self.hidden_dim, self.hidden_dim]))
-        self.U_z = tf.Variable(self.init_matrix([self.hidden_dim, self.hidden_dim]))
-        self.b_z = tf.Variable(self.init_vector([self.hidden_dim]))
-        self.W_r = tf.Variable(self.init_matrix([self.hidden_dim, self.hidden_dim]))
-        self.U_r = tf.Variable(self.init_matrix([self.hidden_dim, self.hidden_dim]))
-        self.b_r = tf.Variable(self.init_vector([self.hidden_dim]))
-        self.W_h = tf.Variable(self.init_matrix([self.hidden_dim, self.hidden_dim]))
-        self.U_h = tf.Variable(self.init_matrix([self.hidden_dim, self.hidden_dim]))
-        self.b_h = tf.Variable(self.init_vector([self.hidden_dim]))
+        self.E = theano.shared(self.init_matrix([self.hidden_dim, self.word_dim]))
+        self.W_z = theano.shared(self.init_matrix([self.hidden_dim, self.hidden_dim]))
+        self.U_z = theano.shared(self.init_matrix([self.hidden_dim, self.hidden_dim]))
+        self.b_z = theano.shared(self.init_vector([self.hidden_dim]))
+        self.W_r = theano.shared(self.init_matrix([self.hidden_dim, self.hidden_dim]))
+        self.U_r = theano.shared(self.init_matrix([self.hidden_dim, self.hidden_dim]))
+        self.b_r = theano.shared(self.init_vector([self.hidden_dim]))
+        self.W_h = theano.shared(self.init_matrix([self.hidden_dim, self.hidden_dim]))
+        self.U_h = theano.shared(self.init_matrix([self.hidden_dim, self.hidden_dim]))
+        self.b_h = theano.shared(self.init_vector([self.hidden_dim]))
         self.params.extend([self.E, self.W_z, self.U_z, self.b_z, self.W_r, self.U_r, self.b_r, self.W_h, self.U_h, self.b_h])
         def unit(word, index, parent_h):
             child_xe = self.E[:,index].dot(word)
-            z = tf.nn.sigmoid(self.W_z.dot(child_xe)+self.U_z.dot(parent_h)+self.b_z)
-            r = T.nnet.sigmoid(self.W_r.dot(child_xe)+self.U_r.dot(parent_h)+self.b_r)
+            z = T.nnet.hard_sigmoid(self.W_z.dot(child_xe)+self.U_z.dot(parent_h)+self.b_z)
+            r = T.nnet.hard_sigmoid(self.W_r.dot(child_xe)+self.U_r.dot(parent_h)+self.b_r)
             c = T.tanh(self.W_h.dot(child_xe)+self.U_h.dot(parent_h * r)+self.b_h)
             h = z*parent_h + (1-z)*c
             return h
@@ -166,39 +161,36 @@ class algorithm(object):
 
     def compute_tree(self, x_word, x_index, num_parent, tree):
         self.recursive_unit = self.create_recursive_unit()
-
-        def ini_unit(dummy, x):
-            return tf.Variable(self.init_vector([self.hidden_dim]))
-
-        init_node_h, _ = tf.scan(
+        def ini_unit(x):
+            return theano.shared(self.init_vector([self.hidden_dim]))
+        
+        init_node_h, _ = theano.scan(
             fn=ini_unit,
-            elems=x_word )
+            sequences=[ x_word ])
 
-        # use recurrence to compute internal node hidden states
         def _recurrence(x_word, x_index, node_info, node_h, last_h):
             parent_h = node_h[node_info[0]]
             child_h = self.recursive_unit(x_word, x_index, parent_h)
-
-            node_h = tf.concat([node_h[:node_info[1]],
+            node_h = T.concatenate([node_h[:node_info[1]],
                                     child_h.reshape([1, self.hidden_dim]),
                                     node_h[node_info[1]+1:] ])
             return node_h, child_h
 
-        dummy = tf.Variable(self.init_vector([self.hidden_dim]))
-        (_, child_hs), _ = tf.scan(
+        dummy = theano.shared(self.init_vector([self.hidden_dim]))
+        (_, child_hs), _ = theano.scan(
             fn=_recurrence,
-            initializer=[init_node_h, dummy],
-            elems=[x_word[:-1], x_index, tree])
+            outputs_info=[init_node_h, dummy],
+            sequences=[x_word[:-1], x_index, tree])
 
         return child_hs[num_parent-1:]
 
     def compute_tree_test(self, x_word, x_index, tree):
         self.recursive_unit = self.create_recursive_unit()
         def ini_unit(x):
-            return tf.Variable(self.init_vector([self.hidden_dim]))
-        init_node_h, _ = tf.scan(
+            return theano.shared(self.init_vector([self.hidden_dim]))
+        init_node_h, _ = theano.scan(
             fn=ini_unit,
-            elems=[ x_word ])
+            sequences=[ x_word ])
 
         def _recurrence(x_word, x_index, node_info, node_h, last_h):
             parent_h = node_h[node_info[0]]
@@ -209,57 +201,29 @@ class algorithm(object):
                                     node_h[node_info[1]+1:] ])
             return node_h, child_h
 
-        dummy = tf.Variable(self.init_vector([self.hidden_dim]))
-        (_, child_hs), _ = tf.scan(
+        dummy = theano.shared(self.init_vector([self.hidden_dim]))
+        (_, child_hs), _ = theano.scan(
             fn=_recurrence,
-            initializer=[init_node_h, dummy],
-            elems=[x_word[:-1], x_index, tree])
+            outputs_info=[init_node_h, dummy],
+            sequences=[x_word[:-1], x_index, tree])
         return child_hs
         
     def loss_fn(self, y, pred_y):
-        return tf.math.reduce_sum(T.sqr(y - pred_y))
+        return T.sum(T.sqr(y - pred_y))
 
     def gradient_descent(self, loss):
-        grad = tf.gradients(loss, self.params)
+        grad = T.grad(loss, self.params)
         self.momentum_velocity_ = [0.] * len(grad)
-        grad_norm = tf.math.sqrt(sum(map(lambda x: tf.math.sqrt(x).sum(), grad)))
+        grad_norm = T.sqrt(sum(map(lambda x: T.sqr(x).sum(), grad)))
         updates = OrderedDict()
-        not_finite = tf.math.logical_or(tf.math.is_nan(grad_norm), T.math.is_inf(grad_norm))
-        scaling_den = T.math.maximum(5.0, grad_norm)
+        not_finite = T.or_(T.isnan(grad_norm), T.isinf(grad_norm))
+        scaling_den = T.maximum(5.0, grad_norm)
         for n, (param, grad) in enumerate(zip(self.params, grad)):
-            grad = tf.cond(not_finite, 0.1 * param,
+            grad = T.switch(not_finite, 0.1 * param,
                             grad * (5.0 / scaling_den))
             velocity = self.momentum_velocity_[n]
             update_step = self.momentum * velocity - self.learning_rate * grad
             self.momentum_velocity_[n] = update_step
             updates[param] = param + update_step
         return updates
-
-# Taken from the following stackoverflow answer:
-# https://stackoverflow.com/a/40430597
-class TensorFlowTheanoFunction(object):   
-  def __init__(self, inputs, outputs, updates=()):
-    self._inputs = inputs
-    self._outputs = outputs
-    self._updates = updates
-
-  def __call__(self, *args, **kwargs):
-    feeds = {}
-    for (argpos, arg) in enumerate(args):
-      feeds[self._inputs[argpos]] = arg
-    try:
-      outputs_identity = [tf.identity(output) for output in self._outputs]
-      output_is_list = True
-    except TypeError:
-      outputs_identity = [tf.identity(self._outputs)]
-      output_is_list = False
-    with tf.control_dependencies(outputs_identity):
-      assign_ops = [tf.assign(variable, replacement) 
-                    for variable, replacement in self._updates]
-    outputs_list = tf.get_default_session().run(
-        outputs_identity + assign_ops, feeds)[:len(outputs_identity)]
-    if output_is_list:
-      return outputs_list
-    else:
-      assert len(outputs_list) == 1
-      return outputs_list[0]
+        

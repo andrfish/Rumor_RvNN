@@ -25,7 +25,7 @@ import random
 from evaluate import *
 #from Util import *
 
-obj = "Twitter15" # choose dataset, you can choose either "Twitter15" or "Twitter16"
+obj = "Twitter16" # choose dataset, you can choose either "Twitter15" or "Twitter16"
 fold = "2" # fold index, choose from 0-4
 tag = "_u2b"
 vocabulary_size = 5000
