@@ -15,6 +15,9 @@
 
 import sys
 import time
+import datetime
+import numpy as np
+from evaluate import *
 import RDescent
 
 # Classifications as defined in the original codebase
@@ -28,6 +31,10 @@ def main(dataset):
     labelPath = "../resource/" + dataset + "_label_All.txt"
     trainPath = "../nfold/RNNtrainSet_" + dataset + "3_tree.txt"
     testPath = "../nfold/RNNtestSet_" + dataset + "3_tree.txt"
+
+    # Define variables
+    epochs = 600
+    lr = 0.005
 
     # Load the data
     print("Loading the datasets... ")
@@ -45,6 +52,39 @@ def main(dataset):
 
     model = RDescent.algorithm(5000)
     print("Completed in %s seconds!\n" % (time.time() - start_time))
+
+    # Run the epochs
+    losses_5, losses = [], []
+    num_examples_seen = 0
+    for epoch in range(epochs):
+        indexs = [i for i in range(len(y_train))]
+        for i in indexs:
+            loss, pred_y = model.train_step_up(word_train[i], index_train[i], parent_num_train[i], tree_train[i], y_train[i], lr)
+            losses.append(np.round(loss,2))
+
+            num_examples_seen += 1
+        print("epoch=" + str(epoch) + ": loss="  + str(np.mean(losses)))
+        sys.stdout.flush()
+
+        # Every five epochs, test the algorithm and see if the learning rate should be adjusted
+        if epoch % 5 == 0:
+            losses_5.append((num_examples_seen, np.mean(losses))) 
+            cur_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print(cur_time + ": Loss after num_examples_seen=" + str(num_examples_seen) + " epoch=: " + str(epoch) + " " + str(np.mean(losses)))
+
+            sys.stdout.flush()
+            prediction = []
+            for j in range(len(y_test)):
+                prediction.append(model.predict_up(word_test[j], index_test[j], parent_num_test[j], tree_test[j]) )   
+            res = evaluation_4class(prediction, y_test) 
+            print('results:' + " " + str(res))
+            sys.stdout.flush()
+
+            if len(losses_5) > 1 and losses_5[-1][1] > losses_5[-2][1]:
+                lr = lr * 0.5   
+                print("Setting learning rate to " + str(lr))
+                sys.stdout.flush()
+        losses = []
 
 # Using code from the original codebase's "Main_TD_RvNN.py" file in the 'loadData' method
 def loadTreeData(treePath):

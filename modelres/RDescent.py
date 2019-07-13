@@ -98,7 +98,7 @@ class algorithm(object):
         self.num_nodes = T.shape(self.word_freq)
         self.num_child = self.num_nodes - self.num_parent-1
 
-        self.tree_states = self.compute_tree(self.word_freq, self.word_idx, self.num_parent, self.tree)
+        self.tree_states = self.compute_tree_td(self.word_freq, self.word_idx, self.num_parent, self.tree)
 
         self.final_state = self.tree_states.max(axis=0)
         self.output_fn = self.create_output_fn()
@@ -113,14 +113,8 @@ class algorithm(object):
         self._train = theano.function(train_inputs,
                                       [self.loss, self.pred_y],
                                       updates=updates)
-
         self._evaluate = theano.function([self.word_freq, self.word_idx, self.num_parent, self.tree], self.final_state)
-        self._evaluate2 = theano.function([self.word_freq, self.word_idx, self.num_parent, self.tree], self.tree_states)
-
         self._predict = theano.function([self.word_freq, self.word_idx, self.num_parent, self.tree], self.pred_y)
-        
-        self.tree_states_test = self.compute_tree_test(self.word_freq, self.word_idx, self.tree)
-        self._evaluate3 = theano.function([self.word_freq, self.word_idx, self.tree], self.tree_states_test)
     
     # This method steps through an epoch
     def train_step_up(self, x_word, x_index, num_parent, tree, y, lr):
@@ -153,7 +147,7 @@ class algorithm(object):
         return fn
 
     # This method returns a Theano function that recurses through the tree from the parent
-    def create_recursive_unit(self):
+    def create_recursive_unit_td(self):
         self.E = theano.shared(self.init_matrix([self.hidden_dim, self.word_dim]))
         self.W_z = theano.shared(self.init_matrix([self.hidden_dim, self.hidden_dim]))
         self.U_z = theano.shared(self.init_matrix([self.hidden_dim, self.hidden_dim]))
@@ -175,8 +169,8 @@ class algorithm(object):
         return unit
 
     # This method returns a Theano function to compute the state of each children under the parent
-    def compute_tree(self, x_word, x_index, num_parent, tree):
-        self.recursive_unit = self.create_recursive_unit()
+    def compute_tree_td(self, x_word, x_index, num_parent, tree):
+        self.recursive_unit = self.create_recursive_unit_td()
         def ini_unit(x):
             return theano.shared(self.init_vector([self.hidden_dim]))
         
@@ -200,30 +194,66 @@ class algorithm(object):
 
         return child_hs[num_parent-1:]
 
-    # This method returns a Theano function to compute the state of each children in the tree
-    def compute_tree_test(self, x_word, x_index, tree):
-        self.recursive_unit = self.create_recursive_unit()
-        def ini_unit(x):
-            return theano.shared(self.init_vector([self.hidden_dim]))
+    def create_recursive_unit_bu(self):
+        self.E = theano.shared(self.init_matrix([self.hidden_dim, self.word_dim]))
+        self.W_z = theano.shared(self.init_matrix([self.hidden_dim, self.hidden_dim]))
+        self.U_z = theano.shared(self.init_matrix([self.hidden_dim, self.hidden_dim]))
+        self.b_z = theano.shared(self.init_vector([self.hidden_dim]))
+        self.W_r = theano.shared(self.init_matrix([self.hidden_dim, self.hidden_dim]))
+        self.U_r = theano.shared(self.init_matrix([self.hidden_dim, self.hidden_dim]))
+        self.b_r = theano.shared(self.init_vector([self.hidden_dim]))
+        self.W_h = theano.shared(self.init_matrix([self.hidden_dim, self.hidden_dim]))
+        self.U_h = theano.shared(self.init_matrix([self.hidden_dim, self.hidden_dim]))
+        self.b_h = theano.shared(self.init_vector([self.hidden_dim]))
+        self.params.extend([self.E, self.W_z, self.U_z, self.b_z, self.W_r, self.U_r, self.b_r, self.W_h, self.U_h, self.b_h])
+        def unit(parent_word, parent_index, child_h, child_exists):
+            h_tilde = T.sum(child_h, axis=0)
+            parent_xe = self.E[:,parent_index].dot(parent_word)
+            z = T.nnet.hard_sigmoid(self.W_z.dot(parent_xe)+self.U_z.dot(h_tilde)+self.b_z)
+            r = T.nnet.hard_sigmoid(self.W_r.dot(parent_xe)+self.U_r.dot(h_tilde)+self.b_r)
+            c = T.tanh(self.W_h.dot(parent_xe)+self.U_h.dot(h_tilde * r)+self.b_h)
+            h = z*h_tilde + (1-z)*c
+            return h
+        return unit
 
-        init_node_h, _ = theano.scan(
-            fn=ini_unit,
-            sequences=[ x_word ])
+    def create_leaf_unit(self):
+        dummy = 0 * theano.shared(self.init_vector([self.degree, self.hidden_dim]))
+        def unit(leaf_word, leaf_index):
+            return self.recursive_unit( leaf_word, leaf_index, dummy, dummy.sum(axis=1))
+        return unit
+    def compute_tree_bu(self, x_word, x_index, tree):
+        self.recursive_unit = self.create_recursive_unit_bu()
+        self.leaf_unit = self.create_leaf_unit()
+        num_parents = tree.shape[0]  # num internal nodes
+        num_leaves = self.num_nodes - num_parents
 
-        def _recurrence(x_word, x_index, node_info, node_h, last_h):
-            parent_h = node_h[node_info[0]]
-            child_h = self.recursive_unit(x_word, x_index, parent_h)
-            node_h = T.concatenate([node_h[:node_info[1]],
-                                    child_h.reshape([1, self.hidden_dim]),
-                                    node_h[node_info[1]+1:] ])
-            return node_h, child_h
+        # compute leaf hidden states
+        leaf_h, _ = theano.map(
+            fn=self.leaf_unit,
+            sequences=[ x_word[:num_leaves], x_index[:num_leaves] ])
+        if self.irregular_tree:
+            init_node_h = T.concatenate([leaf_h, leaf_h, leaf_h], axis=0)
+        else:
+            init_node_h = leaf_h
+
+        # use recurrence to compute internal node hidden states
+        def _recurrence(x_word, x_index, node_info, t, node_h, last_h):
+            child_exists = node_info > -1
+            offset = 2*num_leaves * int(self.irregular_tree) - child_exists * t ### offset???
+            child_h = node_h[node_info + offset] * child_exists.dimshuffle(0, 'x') ### transpose??
+            parent_h = self.recursive_unit(x_word, x_index, child_h, child_exists)
+            node_h = T.concatenate([node_h,
+                                    parent_h.reshape([1, self.hidden_dim])])
+            return node_h[1:], parent_h
 
         dummy = theano.shared(self.init_vector([self.hidden_dim]))
-        (_, child_hs), _ = theano.scan(
+        (_, parent_h), _ = theano.scan(
             fn=_recurrence,
             outputs_info=[init_node_h, dummy],
-            sequences=[x_word[:-1], x_index, tree])
-        return child_hs
+            sequences=[x_word[num_leaves:], x_index[num_leaves:], tree, T.arange(num_parents)],
+            n_steps=num_parents)
+
+        return T.concatenate([leaf_h, parent_h], axis=0)
         
     # This method defines the loss function
     def loss_fn(self, y, pred_y):
