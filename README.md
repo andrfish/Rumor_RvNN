@@ -4,10 +4,9 @@ This repository is a fork of the source code repository as described below. In t
 
 # Fork Dependencies
 Please ensure that you have the following installed in addition to the other dependencies:
-CUDA 9.0
-cuDNN v7.6.1 (June 24, 2019), for CUDA 9.0
-libgpuarray 0.7.1
-- conda install -c mila-udem pygpu
+- CUDA 9.0
+- cuDNN v7.6.1 (June 24, 2019), for CUDA 9.0
+- libgpuarray 0.7.1 (conda install -c mila-udem pygpu)
 
 Then, copy the .theanroc config file in the repository to your home folder. Make sure to update the paths in it appropriately.
 
