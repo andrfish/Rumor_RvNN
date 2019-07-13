@@ -2,6 +2,9 @@
 # This file represents my Recursive Descent (RD)
 # algorithm for Twitter rumor detection
 #
+# This code was modified from the original
+# codebase's "TD_RvNN.py" file
+#
 # Author: Andrew Fisher
 ###################################################
 
@@ -12,14 +15,7 @@ from theano import tensor as T
 from collections import OrderedDict
 from theano.tensor.signal.pool import pool_2d
 
-class Node(object):
-    def __init__(self, idx=None):
-        self.children = []
-        self.tree = idx
-        self.word = []
-        self.index = []
-        self.parent = None
-
+# This method creates a input for the neural network, based on the passed root node
 def gen_nn_inputs(root_node, ini_word):
     tree = [[0, root_node.tree]] 
 
@@ -36,6 +32,7 @@ def gen_nn_inputs(root_node, ini_word):
             np.array(X_index, dtype='int32'),
             np.array(tree, dtype='int32'))
 
+# This method creates a path that can be used to traverse the tree from the passed root node
 def _get_tree_path(root_node):
     if not root_node.children:
         return [], [], []
@@ -64,71 +61,85 @@ def _get_tree_path(root_node):
 
     return tree, word, index
 
+# Used to store information for each node in the tree
+class Node(object):
+    def __init__(self, idx=None):
+        self.children = []
+        self.tree = idx
+        self.word = []
+        self.index = []
+        self.parent = None
+
+# Used for the Recursive Descent (RD) algorithm
 class algorithm(object):
+
+    # Initializes the algorithm
     def __init__(self, word_dim, hidden_dim=5, Nclass=4,
                 degree=2, momentum=0.9,
                  trainable_embeddings=True,
                  labels_on_nonroot_nodes=False,
                  irregular_tree=True):   
-                               
         assert word_dim > 1 and hidden_dim > 1
+
+        # Define algorithm variables
         self.word_dim = word_dim
         self.hidden_dim = hidden_dim
         self.Nclass = Nclass
         self.degree = degree
-
         self.momentum = momentum
         self.irregular_tree = irregular_tree
+        self.learning_rate = T.scalar('learning_rate')
 
         self.params = []
 
-        self.x_word = T.matrix(name='x_word')  # word frequent
-        self.x_index = T.imatrix(name='x_index')  # word indices
-        self.tree = T.imatrix(name='tree')  # shape [None, self.degree]
-        self.y = T.ivector(name='y')  # output shape [self.output_dim]
+        # Define Theano variables
+        self.word_freq = T.matrix(name='x_word')
+        self.word_idx = T.imatrix(name='x_index')
+        self.tree = T.imatrix(name='tree')
+        self.y = T.ivector(name='y')
         self.num_parent = T.iscalar(name='num_parent')
-        self.num_nodes = T.shape(self.x_word)  # total number of nodes (leaves + internal) in tree
+        self.num_nodes = T.shape(self.word_freq)
+
         self.num_child = self.num_nodes - self.num_parent-1
-
-        self.tree_states = self.compute_tree(self.x_word, self.x_index, self.num_parent, self.tree)
-
+        self.tree_states = self.compute_tree(self.word_freq, self.word_idx, self.num_parent, self.tree)
         self.final_state = self.tree_states.max(axis=0)
         self.output_fn = self.create_output_fn()
         self.pred_y = self.output_fn(self.final_state)
         self.loss = self.loss_fn(self.y, self.pred_y)
-
-        self.learning_rate = T.scalar('learning_rate')
-
-        train_inputs = [self.x_word, self.x_index, self.num_parent, self.tree, self.y, self.learning_rate]
+        self.tree_states_test = self.compute_tree_test(self.word_freq, self.word_idx, self.tree)
         updates = self.gradient_descent(self.loss)
+        train_inputs = [self.word_freq, self.word_idx, self.num_parent, self.tree, self.y, self.learning_rate]
 
+        # Define Theano functions
         self._train = theano.function(train_inputs,
                                       [self.loss, self.pred_y],
                                       updates=updates)
-
-        self._evaluate = theano.function([self.x_word, self.x_index, self.num_parent, self.tree], self.final_state)
-        self._evaluate2 = theano.function([self.x_word, self.x_index, self.num_parent, self.tree], self.tree_states)
-
-        self._predict = theano.function([self.x_word, self.x_index, self.num_parent, self.tree], self.pred_y)
-        
-        self.tree_states_test = self.compute_tree_test(self.x_word, self.x_index, self.tree)
-        self._evaluate3 = theano.function([self.x_word, self.x_index, self.tree], self.tree_states_test)
+        self._evaluate = theano.function([self.word_freq, self.word_idx, self.num_parent, self.tree], self.final_state)
+        self._evaluate2 = theano.function([self.word_freq, self.word_idx, self.num_parent, self.tree], self.tree_states)
+        self._evaluate3 = theano.function([self.word_freq, self.word_idx, self.tree], self.tree_states_test)
+        self._predict = theano.function([self.word_freq, self.word_idx, self.num_parent, self.tree], self.pred_y)
     
+    # This method steps through an epoch
     def train_step_up(self, x_word, x_index, num_parent, tree, y, lr):
         return self._train(x_word, x_index, num_parent, tree, y, lr)
         
+    # This method evaluates the accuracy of the current state of the algorithm
     def evaluate(self,  x_word, x_index, num_parent, tree):
         return self._evaluate(x_word, x_index, num_parent, tree)
 
+    # This method predicts rumors using the current state of the algorithm
     def predict_up(self, x_word, x_index, num_parent, tree):
         return self._predict(x_word, x_index, num_parent, tree)
 
+    # This method initializes an empty matrix of shape 'shape'
     def init_matrix(self, shape):
         return np.random.normal(scale=0.1, size=shape).astype(theano.config.floatX)
 
+    # This method initializes a vector of value 'shape'
     def init_vector(self, shape):
         return np.zeros(shape, dtype=theano.config.floatX)
 
+    # This method returns a Theano function that will be used to calculate the output
     def create_output_fn(self):
         self.W_out = theano.shared(self.init_matrix([self.Nclass, self.hidden_dim]))
         self.b_out = theano.shared(self.init_vector([self.Nclass]))
@@ -138,6 +149,7 @@ class algorithm(object):
             return T.nnet.softmax( self.W_out.dot(final_state)+ self.b_out )
         return fn
 
+    # This method returns a Theano function that recurses through the tree from the parent
     def create_recursive_unit(self):
         self.E = theano.shared(self.init_matrix([self.hidden_dim, self.word_dim]))
         self.W_z = theano.shared(self.init_matrix([self.hidden_dim, self.hidden_dim]))
@@ -159,6 +171,7 @@ class algorithm(object):
             return h
         return unit
 
+    # This method returns a Theano function to compute the state of each children under the parent
     def compute_tree(self, x_word, x_index, num_parent, tree):
         self.recursive_unit = self.create_recursive_unit()
         def ini_unit(x):
@@ -184,10 +197,12 @@ class algorithm(object):
 
         return child_hs[num_parent-1:]
 
+    # This method returns a Theano function to compute the state of each children in the tree
     def compute_tree_test(self, x_word, x_index, tree):
         self.recursive_unit = self.create_recursive_unit()
         def ini_unit(x):
             return theano.shared(self.init_vector([self.hidden_dim]))
+
         init_node_h, _ = theano.scan(
             fn=ini_unit,
             sequences=[ x_word ])
@@ -195,7 +210,6 @@ class algorithm(object):
         def _recurrence(x_word, x_index, node_info, node_h, last_h):
             parent_h = node_h[node_info[0]]
             child_h = self.recursive_unit(x_word, x_index, parent_h)
-
             node_h = T.concatenate([node_h[:node_info[1]],
                                     child_h.reshape([1, self.hidden_dim]),
                                     node_h[node_info[1]+1:] ])
@@ -208,9 +222,11 @@ class algorithm(object):
             sequences=[x_word[:-1], x_index, tree])
         return child_hs
         
+    # This method defines the loss function
     def loss_fn(self, y, pred_y):
         return T.sum(T.sqr(y - pred_y))
 
+    # This method defines the gradient function when updating the algorithm on each epoch
     def gradient_descent(self, loss):
         grad = T.grad(loss, self.params)
         self.momentum_velocity_ = [0.] * len(grad)
