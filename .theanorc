@@ -1,3 +1,11 @@
 [global]
-device = gpu
+device = cuda0
 floatx = float32
+cxx=C:\ProgramData\Anaconda3\Library\mingw-w64\bin\g++.exe
+
+[cuda]
+root=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.0\bin
+
+[dnn]
+include_path=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.0\include
+library_path=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.0\bin
