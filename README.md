@@ -2,6 +2,15 @@
 
 This repository is a fork of the source code repository as described below. In this fork, we aim to make the original code compatible with Python 3.7. Then, we plan to improve the results of the model as well as add support for GPU processing.
 
+# Fork Dependencies
+Please ensure that you have the following installed in addition to the other dependencies:
+CUDA 9.0
+cuDNN v7.6.1 (June 24, 2019), for CUDA 9.0
+libgpuarray 0.7.1
+- conda install -c mila-udem pygpu
+
+Then, copy the .theanroc config file in the repository to your home folder. Make sure to update the paths in it appropriately.
+
 # Paper of the source codes released:
 
 Jing Ma, Wei Gao, Kam-Fai Wong. Rumor Detection on Twitter with Tree-structured Recursive Neural Networks. In Proceedings of the 56th Annual Meeting of the Association for Computational Linguistics, ACL 2018.
