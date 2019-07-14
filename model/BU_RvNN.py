@@ -57,7 +57,7 @@ def gen_nn_inputs(root_node, max_degree=None, only_leaves_have_vals=True, with_l
         if not l in ls: ls.append(l)
     print ls'''        
     #print type(X_word)    
-    return (np.array(X_word, dtype='float64'),
+    return (np.array(X_word, dtype='float32'),
             np.array(X_index, dtype='int32'),
             np.array(tree, dtype='int32'))
     #return (np.array(X_word),
@@ -168,7 +168,8 @@ class RvNN(object):
         self.tree = T.imatrix(name='tree')  # shape [None, self.degree]
         self.y = T.ivector(name='y')  # output shape [self.output_dim]
 
-        self.num_nodes = T.shape(self.x_word)  # total number of nodes (leaves + internal) in tree
+        #self.num_nodes = T.shape(self.x_word)  # total number of nodes (leaves + internal) in tree
+        self.num_nodes = self.x_word.shape[0]
         #emb_x = self.embeddings[self.x]
         #emb_x = emb_x * T.neq(self.x, -1).dimshuffle(0, 'x')  # zero-out non-existent embeddings
 
@@ -318,10 +319,3 @@ class RvNN(object):
             updates[param] = param + update_step
         return updates
         
-    def _check_input(self, x, tree):
-        assert np.array_equal(tree[:, -1], np.arange(len(x) - len(tree), len(x)))
-        if not self.irregular_tree:
-            assert np.all((tree[:, 0] + 1 >= np.arange(len(tree))) |
-                          (tree[:, 0] == -1))
-            assert np.all((tree[:, 1] + 1 >= np.arange(len(tree))) |
-                          (tree[:, 1] == -1))

@@ -57,9 +57,13 @@ def main(dataset):
     losses_5, losses = [], []
     num_examples_seen = 0
     for epoch in range(epochs):
-        indexs = [i for i in range(len(y_train))]
+        indexs = [i for i in range(len(y_train) - 1)]
         for i in indexs:
-            loss, pred_y = model.train_step_up(word_train[i], index_train[i], parent_num_train[i], tree_train[i], y_train[i], lr)
+            loss, pred_y = model.train_step_up(word_train[i], index_train[i], parent_num_train[i], tree_train[i], y_train[i], lr, True) #Top down
+            losses.append(np.round(loss,2))
+
+            j = i + 1
+            loss, pred_y = model.train_step_up(word_train[j], index_train[j], parent_num_train[j], tree_train[j], y_train[j], lr, False) #Bottom up
             losses.append(np.round(loss,2))
 
             num_examples_seen += 1
@@ -74,8 +78,11 @@ def main(dataset):
 
             sys.stdout.flush()
             prediction = []
-            for j in range(len(y_test)):
-                prediction.append(model.predict_up(word_test[j], index_test[j], parent_num_test[j], tree_test[j]))   
+            for j in range(len(y_test) - 1):
+                prediction.append(model.predict_up(word_test[j], index_test[j], parent_num_test[j], tree_test[j], True)) #Top down
+                k = j + 1
+                prediction.append(model.predict_up(word_test[k], index_test[k], parent_num_test[k], tree_test[k], False)) #Bottom up
+
             res = evaluation_4class(prediction, y_test) 
             print('results:' + " " + prediction[y_test])
             sys.stdout.flush()
@@ -124,10 +131,18 @@ def loadTrainData(treeDic, labelDic, trainPath):
         y = loadLabel(label)
         y_train.append(y)
 
-        x_word, x_index, tree, parent_num = constructTree(treeDic[eid])
+        x_word_td, x_index_td, tree_td, x_word_bu, x_index_bu, tree_bu, parent_num = constructTree(treeDic[eid])
+
         tree_train.append(tree)
-        word_train.append(x_word)
-        index_train.append(x_index)
+        tree_train.append(tree)
+
+        word_train.append(x_word_td)
+        word_train.append(x_word_bu)
+
+        index_train.append(x_index_td)
+        index_train.append(x_index_bu)
+
+        parent_num_train.append(parent_num)
         parent_num_train.append(parent_num)
 
         c += 1
@@ -148,10 +163,18 @@ def loadTestData(treeDic, labelDic, testPath):
         y = loadLabel(label)
         y_test.append(y)
 
-        x_word, x_index, tree, parent_num = constructTree(treeDic[eid])
+        x_word_td, x_index_td, tree_td, x_word_bu, x_index_bu, tree_bu, parent_num  = constructTree(treeDic[eid])
+
         tree_test.append(tree)
-        word_test.append(x_word)  
-        index_test.append(x_index) 
+        tree_test.append(tree)
+
+        word_test.append(x_word_td)
+        word_test.append(x_word_bu)
+
+        index_test.append(x_index_td)
+        index_test.append(x_index_bu)
+
+        parent_num_test.append(parent_num)
         parent_num_test.append(parent_num)
 
         c += 1
@@ -194,8 +217,11 @@ def constructTree(tree):
 
     parent_num = tree[j]['parent_num'] 
     ini_x, ini_index = str2matrix( "0:0", tree[j]['maxL'] )
-    x_word, x_index, tree = RDescent.gen_nn_inputs(root, ini_x) 
-    return x_word, x_index, tree, parent_num  
+
+    x_word_td, x_index_td, tree_td = RDescent.gen_nn_inputs_td(root, ini_x) 
+    x_word_bu, x_index_bu, tree_bu = RDescent.gen_nn_inputs_bu(root, max_degree=parent_num, only_leaves_have_vals=False)
+
+    return x_word_td, x_index_td, tree_td, x_word_bu, x_index_bu, tree_bu, parent_num  
 
 # Using code from the original codebase's "Main_TD_RvNN.py" file
 def str2matrix(Str, MaxL):
