@@ -98,35 +98,66 @@ class algorithm(object):
         self.num_nodes = T.shape(self.word_freq)
         self.num_child = self.num_nodes - self.num_parent-1
 
-        self.tree_states = self.compute_tree_td(self.word_freq, self.word_idx, self.num_parent, self.tree)
+        self.tree_states_td = self.compute_tree_td(self.word_freq, self.word_idx, self.num_parent, self.tree)
+        self.tree_states_bu = self.compute_tree_bu(self.word_freq, self.word_idx, self.tree)
 
-        self.final_state = self.tree_states.max(axis=0)
+        self.final_state_td = self.tree_states_td.max(axis=0)
+        self.final_state_bu = self.tree_states_bu[-1]
+
         self.output_fn = self.create_output_fn()
-        self.pred_y = self.output_fn(self.final_state)
-        self.loss = self.loss_fn(self.y, self.pred_y)
+        
+        self.pred_y_td = self.output_fn(self.final_state_td)
+        self.pred_y_bu = self.output_fn(self.final_state_bu)
+
+        self.loss_td = self.loss_fn(self.y, self.pred_y_td)
+        self.loss_bu = self.loss_fn(self.y, self.pred_y_bu)
 
         self.learning_rate = T.scalar('learning_rate')
 
         train_inputs = [self.word_freq, self.word_idx, self.num_parent, self.tree, self.y, self.learning_rate]
-        updates = self.gradient_descent(self.loss)
 
-        self._train = theano.function(train_inputs,
-                                      [self.loss, self.pred_y],
-                                      updates=updates)
-        self._evaluate = theano.function([self.word_freq, self.word_idx, self.num_parent, self.tree], self.final_state)
-        self._predict = theano.function([self.word_freq, self.word_idx, self.num_parent, self.tree], self.pred_y)
+        updates_td = self.gradient_descent(self.loss_td)
+        updates_bu = self.gradient_descent(self.loss_bu)
+
+        self._train_td = theano.function(train_inputs,
+                                      [self.loss_td, self.pred_y_td],
+                                      updates=updates_td)
+        self._train_bu = theano.function(train_inputs,
+                                      [self.loss_bu, self.pred_y_bu],
+                                      updates=updates_bu)
+
+        self._evaluate_td = theano.function([self.word_freq, self.word_idx, self.num_parent, self.tree], self.final_state_td)
+        self._evaluate_bu = theano.function([self.word_freq, self.word_idx, self.num_parent, self.tree], self.final_state_bu)
+
+        self._predict_td = theano.function([self.word_freq, self.word_idx, self.num_parent, self.tree], self.pred_y_td)
+        self._predict_bu = theano.function([self.word_freq, self.word_idx, self.num_parent, self.tree], self.pred_y_bu)
     
     # This method steps through an epoch
     def train_step_up(self, x_word, x_index, num_parent, tree, y, lr):
-        return self._train(x_word, x_index, num_parent, tree, y, lr)
+        loss_td, pred_y_td = self._train_td(x_word, x_index, num_parent, tree, y, lr)
+        loss_bu, pred_y_bu = self._train(x_word, x_index, tree[:, :,-1], y, lr)
+
+        print("LossTD=" + str(loss_td) + " PredTD=" + str(pred_y_td) + " LossBU=" + str(loss_bu) + " PredBU=" + str(pred_y_bu))
+
+        return (0, 0)
         
     # This method evaluates the accuracy of the current state of the algorithm
     def evaluate(self,  x_word, x_index, num_parent, tree):
-        return self._evaluate(x_word, x_index, num_parent, tree)
+        eval_td = self._evaluate_td(x_word, x_index, num_parent, tree)
+        eval_bu = self._evaluate_bu(x_word, x_index, num_parent, tree)
+
+        print("EvalTD=" + str(eval_td) + " EvalBU=" + str(eval_bu))
+
+        return 0
 
     # This method predicts rumors using the current state of the algorithm
     def predict_up(self, x_word, x_index, num_parent, tree):
-        return self._predict(x_word, x_index, num_parent, tree)
+        pred_td = self._predict_td(x_word, x_index, num_parent, tree)
+        pred_bu = self._predict_bu(x_word, x_index, num_parent, tree)
+
+        print("PredTD=" + pred_td + " PredBU=" + pred_bu)
+
+        return 0
 
     # This method initializes an empty matrix of shape 'shape'
     def init_matrix(self, shape):
@@ -170,7 +201,7 @@ class algorithm(object):
 
     # This method returns a Theano function to compute the state of each children under the parent
     def compute_tree_td(self, x_word, x_index, num_parent, tree):
-        self.recursive_unit = self.create_recursive_unit_td()
+        self.recursive_unit_td = self.create_recursive_unit_td()
         def ini_unit(x):
             return theano.shared(self.init_vector([self.hidden_dim]))
         
@@ -180,7 +211,7 @@ class algorithm(object):
 
         def _recurrence(x_word, x_index, node_info, node_h, last_h):
             parent_h = node_h[node_info[0]]
-            child_h = self.recursive_unit(x_word, x_index, parent_h)
+            child_h = self.recursive_unit_td(x_word, x_index, parent_h)
             node_h = T.concatenate([node_h[:node_info[1]],
                                     child_h.reshape([1, self.hidden_dim]),
                                     node_h[node_info[1]+1:] ])
@@ -219,18 +250,17 @@ class algorithm(object):
     def create_leaf_unit(self):
         dummy = 0 * theano.shared(self.init_vector([self.degree, self.hidden_dim]))
         def unit(leaf_word, leaf_index):
-            return self.recursive_unit( leaf_word, leaf_index, dummy, dummy.sum(axis=1))
+            return self.recursive_unit_bu( leaf_word, leaf_index, dummy, dummy.sum(axis=1))
         return unit
     def compute_tree_bu(self, x_word, x_index, tree):
-        self.recursive_unit = self.create_recursive_unit_bu()
+        self.recursive_unit_bu = self.create_recursive_unit_bu()
         self.leaf_unit = self.create_leaf_unit()
-        num_parents = tree.shape[0]  # num internal nodes
-        num_leaves = self.num_nodes - num_parents
+        num_parent = tree.shape[0]
+        num_leaves = self.num_nodes - num_parent
 
-        # compute leaf hidden states
         leaf_h, _ = theano.map(
             fn=self.leaf_unit,
-            sequences=[ x_word[:num_leaves], x_index[:num_leaves] ])
+            sequences=[ x_word[:,-1], x_index[:,-1] ])
         if self.irregular_tree:
             init_node_h = T.concatenate([leaf_h, leaf_h, leaf_h], axis=0)
         else:
@@ -241,7 +271,7 @@ class algorithm(object):
             child_exists = node_info > -1
             offset = 2*num_leaves * int(self.irregular_tree) - child_exists * t ### offset???
             child_h = node_h[node_info + offset] * child_exists.dimshuffle(0, 'x') ### transpose??
-            parent_h = self.recursive_unit(x_word, x_index, child_h, child_exists)
+            parent_h = self.recursive_unit_bu(x_word, x_index, child_h, child_exists)
             node_h = T.concatenate([node_h,
                                     parent_h.reshape([1, self.hidden_dim])])
             return node_h[1:], parent_h
@@ -250,8 +280,8 @@ class algorithm(object):
         (_, parent_h), _ = theano.scan(
             fn=_recurrence,
             outputs_info=[init_node_h, dummy],
-            sequences=[x_word[num_leaves:], x_index[num_leaves:], tree, T.arange(num_parents)],
-            n_steps=num_parents)
+            sequences=[x_word[num_leaves,:], x_index[num_leaves,:], tree, T.arange(num_parents)],
+            n_steps=self.num_parent)
 
         return T.concatenate([leaf_h, parent_h], axis=0)
         

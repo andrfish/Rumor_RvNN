@@ -17,7 +17,7 @@ import sys
 import time
 import datetime
 import numpy as np
-from evaluate import *
+
 import RDescent
 
 # Classifications as defined in the original codebase
@@ -75,9 +75,9 @@ def main(dataset):
             sys.stdout.flush()
             prediction = []
             for j in range(len(y_test)):
-                prediction.append(model.predict_up(word_test[j], index_test[j], parent_num_test[j], tree_test[j]) )   
+                prediction.append(model.predict_up(word_test[j], index_test[j], parent_num_test[j], tree_test[j]))   
             res = evaluation_4class(prediction, y_test) 
-            print('results:' + " " + str(res))
+            print('results:' + " " + prediction[y_test])
             sys.stdout.flush()
 
             if len(losses_5) > 1 and losses_5[-1][1] > losses_5[-2][1]:
