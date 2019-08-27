@@ -1,6 +1,6 @@
 # Fork Description
 
-This repository is a fork of the source code repository as described below. In this fork, we aim to make the original code compatible with Python 3.7. Then, we plan to improve the results of the model as well as add support for GPU processing.
+This repository is a fork of the source code repository as described below. In this fork, we made original code compatible with Python 3.7. Future work could include adding support for GPU processing.
 
 # Fork Dependencies
 Please ensure that you have the following installed in addition to the other dependencies:
